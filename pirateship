@@ -15,20 +15,21 @@ function help() {
    echo
 }
 
-while getopts "hrj" opt; do
+while getopts "hrj:" opt; do
     case "$opt" in
         h) help && exit;;
-        r) raw=true;;
+        r) raw=1;;
         j) jq_query=$OPTARG;;
     esac
 done
 shift $((OPTIND-1)) # Move arguments past the options
 URL=$1
+raw=${raw:-0}
 
 if [[ -z "$URL" ]]; then
   echo "You must provide a Spotify playlist URL"
   exit 1
-elif $raw && [[ ! -z "$jq_query" ]]; then
+elif [ $raw -eq 1 ] && [[ ! -z "$jq_query" ]]; then
   echo "-r and -j are mutually exclusive"
   exit 1
 fi
@@ -76,16 +77,16 @@ playlist_resp=$(curl "https://api.spotify.com/v1/playlists/$playlist_id/tracks" 
 -H "Accept: application/json" -H "Content-Type: application/json")
 
 # ---- Output formatting ----
-if $raw; then
+if [ $raw -eq 1 ]; then
   echo $playlist_resp && exit 0
 fi
 
 # Extract the artist, album, and song name from each track if jq_query is unset
-query=$jq_query || ".items[].track|[.artists[].name,.name,.album.name]"
+query=${jq_query:-".items[].track|[.artists[].name,.name,.album.name]"}
 songs=$(echo -n $playlist_resp | jq $query)
 
 if [[ ! -z "$jq_query" ]]; then
-  echo songs
+  echo $songs
 else
   # Printing each song in the array
   for song in $songs; do
