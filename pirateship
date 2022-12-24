@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# ---- Constants ----
+CRED_PATH="./spotify-creds.json"
+
+# ---- Option parsing ----
+function help() {
+    echo "Add description of the script functions here."
+   echo
+   echo "Syntax: pirateship [-h|r] <playlist URL>"
+   echo "\tpirateship -j <jq query> <playlist URL>"
+   echo "options:"
+   echo "r     Output the raw response. Cannot be used with -j"
+   echo "j     Use a custom JQ query. Cannot be used with -r"
+   echo
+}
+
+while getopts "hrj" opt; do
+    case "$opt" in
+        h) help && exit;;
+        r) raw=true;;
+        j) jq_query=$OPTARG;;
+    esac
+done
+shift $((OPTIND-1)) # Move arguments past the options
+URL=$1
+
+if [[ -z "$URL" ]]; then
+  echo "You must provide a Spotify playlist URL"
+  exit 1
+elif $raw && [[ ! -z "$jq_query" ]]; then
+  echo "-r and -j are mutually exclusive"
+  exit 1
+fi
+
+# ---- Authentication ----
+# Read client secrets
+if test -f $CRED_PATH; then
+    CLIENT_ID=$(jq -r .client_id $CRED_PATH)
+    CLIENT_SECRET=$(jq -r .client_secret $CRED_PATH)
+else
+    echo "No credentials found. See  the 'Set-up' heading in the README"
+    exit 1
+fi
+
+# Encode client params in base64 (you have to for this API).
+# -w0 means no text wrapping. Prevents a newline from interrupting the output
+encoded_client=$(echo -n "$CLIENT_ID:$CLIENT_SECRET" | base64 -w0)
+
+# Get token
+echo "Getting authorization token from Spotify"
+auth_resp=$(curl -X "POST" -# \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-H "Authorization: Basic $encoded_client" \
+-d grant_type=client_credentials \
+https://accounts.spotify.com/api/token)
+access_token=$(echo -n $auth_resp | jq -r .access_token)
+
+# Make auth header
+AUTH_HEADER="Authorization: Bearer $access_token"
+
+# ---- Request playlist ----
+# Get playlist ID
+# Reused RegEx from other project. Slightly redundant
+if [[ $URL =~ (https:\/\/open\.spotify\.com\/playlist\/)([^?]+)(\?.+|$) ]]; then
+  playlist_id=${BASH_REMATCH[2]}  # Capture group 2
+else
+  echo "Could not extract playlist ID from $URL"
+  exit 1
+fi
+echo "Requesting playlist from Spotify"
+# TODO: this only requests the first page. Follow the `next` key from the response
+# See https://developer.spotify.com/documentation/web-api/reference/#/operations/get-playlists-tracks
+playlist_resp=$(curl "https://api.spotify.com/v1/playlists/$playlist_id/tracks" \
+-X "GET" -# -H "Authorization: Bearer $access_token" \
+-H "Accept: application/json" -H "Content-Type: application/json")
+
+# ---- Output formatting ----
+if $raw; then
+  echo $playlist_resp && exit 0
+fi
+
+# Extract the artist, album, and song name from each track if jq_query is unset
+query=$jq_query || ".items[].track|[.artists[].name,.name,.album.name]"
+songs=$(echo -n $playlist_resp | jq $query)
+
+if [[ ! -z "$jq_query" ]]; then
+  echo songs
+else
+  # Printing each song in the array
+  for song in $songs; do
+      echo $song
+  done
+fi
