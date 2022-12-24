@@ -49,7 +49,8 @@ fi
 encoded_client=$(echo -n "$CLIENT_ID:$CLIENT_SECRET" | base64 -w0)
 
 # Get token
-echo "Getting authorization token from Spotify"
+# Make sure that logging isn't put in the output
+echo "Getting authorization token from Spotify" >&2  # Log to stderr
 auth_resp=$(curl -X "POST" -# \
 -H "Content-Type: application/x-www-form-urlencoded" \
 -H "Authorization: Basic $encoded_client" \
@@ -69,7 +70,8 @@ else
   echo "Could not extract playlist ID from $URL"
   exit 1
 fi
-echo "Requesting playlist from Spotify"
+
+echo "Requesting playlist from Spotify" >&2  # Log to stderr
 # TODO: this only requests the first page. Follow the `next` key from the response
 # See https://developer.spotify.com/documentation/web-api/reference/#/operations/get-playlists-tracks
 playlist_resp=$(curl "https://api.spotify.com/v1/playlists/$playlist_id/tracks" \
